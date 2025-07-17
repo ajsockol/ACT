@@ -462,7 +462,8 @@ def test_plot_barbs_from_u_v4():
     fake_ds = xr.Dataset(
         {'xbins': xbins, 'ybins': ybins, 'ydata': y_array, 'xdata': x_array, 'pres': pres}
     )
-    BarbDisplay = TimeSeriesDisplay(fake_ds)
+    with pytest.warns(UserWarning, match="Could not discern datastreamname and dict or tuple"):
+        BarbDisplay = TimeSeriesDisplay(fake_ds)
     BarbDisplay.plot_barbs_from_u_v(
         'xdata', 'ydata', None, set_title='test', use_var_for_y='pres', cmap='jet'
     )
@@ -488,7 +489,8 @@ def test_plot_barbs_from_u_v5():
     fake_ds = xr.Dataset(
         {'xbins': xbins, 'ybins': ybins, 'ydata': y_array, 'xdata': x_array, 'pres': pres}
     )
-    BarbDisplay = TimeSeriesDisplay(fake_ds)
+    with pytest.warns(UserWarning, match="Could not discern datastreamname and dict or tuple"):
+        BarbDisplay = TimeSeriesDisplay(fake_ds)
     BarbDisplay.plot_barbs_from_u_v(
         'xdata',
         'ydata',
@@ -683,3 +685,74 @@ def test_xlim_correction_plot():
     ds.close()
 
     return display.fig
+
+
+@pytest.mark.mpl_image_compare(tolerance=10)
+def test_plot_stripes():
+    ds = act.io.read_arm_netcdf(sample_files.EXAMPLE_MET_WILDCARD)
+    ds = ds.resample(time='1h').mean()
+    print(ds)
+    reference_period = ['2019-01-01', '2019-10-02']
+
+    display = act.plotting.TimeSeriesDisplay(ds, figsize=(10, 2))
+    display.plot_stripes('temp_mean', reference_period=reference_period)
+
+    return display.fig
+
+
+@pytest.mark.mpl_image_compare(tolerance=10)
+def test_plot_labels():
+    ds = act.io.arm.read_arm_netcdf(sample_files.EXAMPLE_CEIL1)
+
+    display = TimeSeriesDisplay(ds)
+    display.plot(
+        'backscatter',
+        ylabel='Height (m)',
+        cbar_labelpad=6,
+        cbar_labelsize=5,
+        cbar_label='Backscatter',
+    )
+
+    ds.close()
+    del ds
+
+    try:
+        return display.fig
+    finally:
+        matplotlib.pyplot.close(display.fig)
+
+
+@pytest.mark.mpl_image_compare(tolerance=10)
+def test_time_height_scatter_errorbars():
+    sonde_ds = act.io.arm.read_arm_netcdf(sample_files.EXAMPLE_SONDE1)
+
+    yerrors = []
+    for val in sonde_ds['tdry'].values:
+        yerrors.append(abs(val) * 0.1)
+
+    display = TimeSeriesDisplay({'sgpsondewnpnC1.b1': sonde_ds}, figsize=(10, 6))
+    display.time_height_scatter(
+        'tdry', yerror=yerrors, error_kw={'ecolor': 'black', 'errorevery': 50}
+    )
+
+    sonde_ds.close()
+
+    try:
+        return display.fig
+    finally:
+        matplotlib.pyplot.close(display.fig)
+
+
+@pytest.mark.mpl_image_compare(tolerance=10)
+def test_timeseries_errorbars():
+    sonde_ds = act.io.arm.read_arm_netcdf(sample_files.EXAMPLE_SONDE1)
+
+    display = TimeSeriesDisplay({'sgpsondewnpnC1.b1': sonde_ds}, figsize=(10, 6))
+    display.plot('wspd', yerror=20, error_kw={'color': 'purple', 'marker': '^', 'errorevery': 75})
+
+    sonde_ds.close()
+
+    try:
+        return display.fig
+    finally:
+        matplotlib.pyplot.close(display.fig)

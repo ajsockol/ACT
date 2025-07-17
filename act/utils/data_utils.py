@@ -112,6 +112,7 @@ class ChangeUnits:
                     self._ds[var_name].attrs = attrs
             except (
                 KeyError,
+                TypeError,
                 pint.errors.DimensionalityError,
                 pint.errors.UndefinedUnitError,
                 np.core._exceptions.UFuncTypeError,
@@ -1270,6 +1271,7 @@ def arm_site_location_search(site_code='sgp', facility_code=None):
     """
     headers = {
         'Content-Type': 'application/json',
+        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36',
     }
     # Return all facilities if facility_code is None else set the query to include
     # facility search
@@ -1310,8 +1312,8 @@ def arm_site_location_search(site_code='sgp', facility_code=None):
         },
     }
 
-    # Uses requests to grab metadata from arm.gov.
-    response = requests.get(
+    # Uses requests to grab metadata from adc.arm.gov.
+    response = requests.post(
         'https://adc.arm.gov/elastic/metadata/_search', headers=headers, json=json_data
     )
     # Loads the text to a dictionary

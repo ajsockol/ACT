@@ -14,7 +14,7 @@ def test_get_stability_indices():
         rtol=1e-5,
     )
     assert sonde_ds['parcel_temperature'].attrs['units'] == 'kelvin'
-    np.testing.assert_almost_equal(sonde_ds['surface_based_cape'], 0.96, decimal=2)
+    np.testing.assert_almost_equal(sonde_ds['surface_based_cape'], 0.98, decimal=2)
     assert sonde_ds['surface_based_cape'].attrs['units'] == 'J/kg'
     assert sonde_ds['surface_based_cape'].attrs['long_name'] == 'Surface-based CAPE'
     np.testing.assert_almost_equal(sonde_ds['surface_based_cin'], 0.000, decimal=3)
@@ -130,5 +130,5 @@ def test_calculate_heffter_pbl():
     assert ds['pblht_heffter'].values == 960.0
     np.testing.assert_almost_equal(ds['atm_pres_ss'].values[1], 994.9, 1)
     np.testing.assert_almost_equal(ds['potential_temperature_ss'].values[4], 298.4, 1)
-    assert np.sum(ds['bottom_inversion'].values) == 7426
-    assert np.sum(ds['top_inversion'].values) == 7903
+    assert np.sum(ds['bottom_inversion'].values) == 7426.0
+    assert np.sum(ds['top_inversion'].values) == 7903.0

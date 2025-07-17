@@ -9,11 +9,14 @@ import warnings
 from copy import deepcopy
 from re import search, search as re_search
 
+import numpy as np
+import pandas as pd
+from scipy import stats
 import matplotlib as mpl
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+from matplotlib.patches import Rectangle
+from matplotlib.collections import PatchCollection
 from matplotlib import colors as mplcolors
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.interpolate import NearestNDInterpolator
@@ -302,7 +305,10 @@ class TimeSeriesDisplay(Display):
         abs_limits=(None, None),
         time_rng=None,
         y_rng=None,
+        ylabel=None,
         use_var_for_y=None,
+        yerror=None,
+        error_kw={},
         set_shading='auto',
         assessment_overplot=False,
         overplot_marker='.',
@@ -315,9 +321,11 @@ class TimeSeriesDisplay(Display):
         assessment_overplot_category_color={'Incorrect': 'red', 'Suspect': 'orange'},
         force_line_plot=False,
         labels=False,
+        y_axis_flag_meanings=False,
         cbar_label=None,
         cbar_h_adjust=None,
-        y_axis_flag_meanings=False,
+        cbar_labelpad=5,
+        cbar_labelsize=10,
         colorbar_labels=None,
         cvd_friendly=False,
         match_line_label_color=False,
@@ -360,12 +368,21 @@ class TimeSeriesDisplay(Display):
             limits.
         y_rng : tuple or list
             List or tuple with (min, max) values to set the y-axis range
+        ylabel : str
+            Label for the y-axis of the plot.  This will take the place of the
+            default which is to get the variable name or units.
         use_var_for_y : str
             Set this to the name of a data variable in the Dataset to use as
             the y-axis variable instead of the default dimension. Useful for
             instances where data has an index-based dimension instead of a
             height-based dimension. If shapes of arrays do not match it will
             automatically revert back to the original ydata.
+        yerror : float or array-like, shape(N,) or shape(2,N)
+            Option to add y-error bars to timeseries plots using
+            matplotlib.errorbar functionality.
+        error_kw : dict
+            The keyword arguments for :func`plt.errorbar` if yerror is not
+            None.
         set_shading : string
             Option to to set the matplotlib.pcolormesh shading parameter.
             Default to 'auto'
@@ -391,17 +408,21 @@ class TimeSeriesDisplay(Display):
         labels : boolean or list
             Option to overwrite the legend labels. Must have same dimensions as
             number of lines plotted.
-        cbar_label : str
-            Option to overwrite default colorbar label.
-        cbar_h_adjust : float
-            Option to adjust location of colorbar horizontally. Positive values
-            move to right negative values move to left.
         y_axis_flag_meanings : boolean or int
             When set to True and plotting state variable with flag_values and
             flag_meanings attributes will replace y axis numerical values
             with flag_meanings value. Set to a positive number larger than 1
             to indicate maximum word length to use. If text is longer that the
             value and has space characters will split text over multiple lines.
+        cbar_label : str
+            Option to overwrite default colorbar label.
+        cbar_h_adjust : float
+            Option to adjust location of colorbar horizontally. Positive values
+            move to right negative values move to left.
+        cbar_labelpad : int
+            Adjusts the location of the colorbar title. Default is 5.
+        cbar_labelsize : int
+            Adjusts the fontsize of the colorbar title. Default is 10.
         colorbar_labels : dict
             A dictionary containing values for plotting a 2D array of state variables.
             The dictionary uses data values as keys and a dictionary containing keys
@@ -471,6 +492,7 @@ class TimeSeriesDisplay(Display):
 
         if cbar_label is None:
             cbar_default = ytitle
+
         if len(dim) > 1:
             if use_var_for_y is None:
                 ydata = self._ds[dsname][dim[1]]
@@ -500,6 +522,10 @@ class TimeSeriesDisplay(Display):
                 ydata = None
         else:
             ydata = None
+
+        # Set ylabel after previous default titles if ylabel is set
+        if ylabel is not None:
+            ytitle = ylabel
 
         # Get the current plotting axis
         if self.fig is None:
@@ -546,7 +572,15 @@ class TimeSeriesDisplay(Display):
             if 'marker' not in kwargs.keys():
                 kwargs['marker'] = '.'
 
-            lines = ax.plot(xdata, data, **kwargs)
+            if yerror is not None:
+                # If kwargs in error_kw and kwargs, error_kw takes precedence
+                for key in error_kw.keys():
+                    if key in kwargs:
+                        kwargs.pop(key)
+
+                lines = ax.errorbar(xdata.values, data, yerr=yerror, **error_kw, **kwargs)
+            else:
+                lines = ax.plot(xdata, data, **kwargs)
 
             # Check if we need to call legend method after plotting. This is only
             # called when no assessment overplot is called.
@@ -746,25 +780,25 @@ class TimeSeriesDisplay(Display):
             if cbar_label is None:
                 cbar_title = cbar_default
             else:
-                cbar_title = ''.join(['(', cbar_label, ')'])
+                cbar_title = cbar_label
 
             if colorbar_labels is not None:
                 cbar_title = None
                 cbar = self.add_colorbar(
                     mesh,
-                    title=cbar_title,
                     subplot_index=subplot_index,
                     values=flag_values,
                     pad=cbar_h_adjust,
                 )
+                cbar.set_label(cbar_title, labelpad=cbar_labelpad, fontsize=cbar_labelsize)
                 cbar.set_ticks(flag_values)
                 cbar.set_ticklabels(flag_meanings)
-                cbar.ax.tick_params(labelsize=10)
+                cbar.ax.tick_params(labelsize=cbar_labelsize)
 
             else:
-                self.add_colorbar(
-                    mesh, title=cbar_title, subplot_index=subplot_index, pad=cbar_h_adjust
-                )
+                cbar = self.add_colorbar(mesh, subplot_index=subplot_index, pad=cbar_h_adjust)
+                cbar.set_label(cbar_title, labelpad=cbar_labelpad, fontsize=cbar_labelsize)
+                cbar.ax.tick_params(labelsize=cbar_labelsize)
         return ax
 
     def plot_barbs_from_spd_dir(
@@ -1282,6 +1316,8 @@ class TimeSeriesDisplay(Display):
         self,
         data_field=None,
         alt_field='alt',
+        yerror=None,
+        error_kw={},
         dsname=None,
         cmap='rainbow',
         alt_label=None,
@@ -1305,6 +1341,12 @@ class TimeSeriesDisplay(Display):
             Name of data field in the dataset to plot on second y-axis.
         alt_field : str
             Variable to use for y-axis.
+        yerror : float or array-like, shape(N,) or shape(2,N)
+            Option to add y-error bars to time-height plots using
+            matplotlib.errorbar functionality.
+        error_kw : dict
+            The keyword arguments for :func`plt.errorbar` if yerror is not
+            None.
         dsname : str or None
             The name of the datastream to plot.
         cmap : str
@@ -1399,6 +1441,42 @@ class TimeSeriesDisplay(Display):
 
         # Plot scatter data
         sc = ax.scatter(xdata.values, data.values, c=data.values, cmap=cmap, **kwargs)
+
+        # Optional overlay of errorbars
+        if yerror is not None:
+            # if 'ecolor not specified', bar color same as scatter colors
+            if 'ecolor' not in error_kw:
+                colormap = sc.get_cmap()
+                norm = sc.norm
+                bar_colors = colormap(norm(data.values))
+
+                # Handle errorevery subsetting
+                if 'errorevery' in error_kw:
+                    errorevery = error_kw['errorevery']
+                    if isinstance(errorevery, int):
+                        bar_colors = bar_colors[::errorevery]
+                    elif isinstance(errorevery, tuple):
+                        bar_colors = bar_colors[errorevery[0] :: errorevery[1]]
+
+                error_kw['ecolor'] = bar_colors
+
+            # Prevent overwritting of scatter
+            error_kw['fmt'] = 'none'
+            for key in [
+                'marker',
+                'markersize',
+                'markerfacecolor',
+                'markeredgecolor',
+                'markeredgewidth',
+                'markevery',
+                'fillstyle',
+                'linestyle',
+                'linewidth',
+                'color',
+            ]:
+                error_kw.pop(key, None)
+
+            ax.errorbar(xdata.values, data.values, yerr=yerror, **error_kw)
 
         ax.set_title(set_title)
         if plot_alt_field:
@@ -1845,5 +1923,132 @@ class TimeSeriesDisplay(Display):
                 ]
             )
         ax.set_title(set_title)
+        self.axes[subplot_index] = ax
+        return self.axes[subplot_index]
+
+    def plot_stripes(
+        self,
+        field,
+        dsname=None,
+        subplot_index=(0,),
+        set_title=None,
+        reference_period=None,
+        cmap='bwr',
+        cbar_label=None,
+        colorbar=True,
+        **kwargs,
+    ):
+        """
+        Makes a climate stripe plot with or without a baseline period specified
+
+        Parameters
+        ----------
+        field : str
+            The name of the field to plot.
+        dsname : None or str
+            If there is more than one datastream in the display object the
+            name of the datastream needs to be specified. If set to None and
+            there is only one datastream ACT will use the sole datastream
+            in the object.
+        subplot_index : 1 or 2D tuple, list, or array
+            The index of the subplot to set the x range of.
+        set_title : str
+            The title for the plot.
+        reference_period : list
+            List of a start and end date for a reference period ['2020-01-01', '2020-04-01']
+            If this is set, the plot will subtract the mean of the reference period from the
+            field to create an anomaly calculation.
+        cmap : string
+            Colormap to use for plotting.  Defaults to bwr
+        cbar_label : str
+            Option to overwrite default colorbar label.
+        colorbar : boolean
+            Option to not plot the colorbar. Default is to plot it
+        **kwargs : keyword arguments
+            The keyword arguments for :func:`plt.plot` (1D timeseries) or
+            :func:`plt.pcolormesh` (2D timeseries).
+
+        Returns
+        -------
+        ax : matplotlib axis handle
+            The matplotlib axis handle of the plot.
+
+        """
+        if dsname is None and len(self._ds.keys()) > 1:
+            raise ValueError(
+                'You must choose a datastream when there are 2 '
+                'or more datasets in the TimeSeriesDisplay '
+                'object.'
+            )
+        elif dsname is None:
+            dsname = list(self._ds.keys())[0]
+
+        # Get data and dimensions
+        data = self._ds[dsname][field]
+        dim = list(self._ds[dsname][field].dims)
+        xdata = self._ds[dsname][dim[0]]
+
+        start = int(mdates.date2num(xdata.values[0]))
+        end = int(mdates.date2num(xdata.values[-1]))
+        delta = stats.mode(xdata.diff('time').values)[0] / np.timedelta64(1, 'D')
+
+        # Calculate mean for reference period and subtract from the data
+        if reference_period is not None:
+            reference = data.sel(time=slice(reference_period[0], reference_period[1])).mean('time')
+            data.values = data.values - reference.values
+
+        # Get the current plotting axis, add day/night background and plot data
+        if self.fig is None:
+            self.fig = plt.figure()
+
+        if self.axes is None:
+            self.axes = np.array([plt.axes()])
+            self.fig.add_axes(self.axes[0])
+
+        # Set ax to appropriate axis
+        ax = self.axes[subplot_index]
+
+        # Plot up data using rectangles
+        col = PatchCollection(
+            [Rectangle((y, 0), delta, 1) for y in np.arange(start, end + 1, delta)]
+        )
+        col.set_array(data)
+        col.set_cmap(cmap)
+        col.set_clim(np.nanmin(data), np.nanmax(data))
+        ax.add_collection(col)
+
+        locator = mdates.AutoDateLocator(minticks=3)
+        formatter = mdates.AutoDateFormatter(locator)
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(formatter)
+
+        ax.set_ylim(0, 1)
+        ax.set_yticks([])
+        ax.set_xlim(start, end + 1)
+
+        # Set Title
+        if set_title is None:
+            set_title = ' '.join(
+                [
+                    dsname,
+                    field,
+                    'Stripes on',
+                    dt_utils.numpy_to_arm_date(self._ds[dsname].time.values[0]),
+                ]
+            )
+        ax.set_title(set_title)
+
+        # Set Colorbar
+        if colorbar:
+            if 'units' in data.attrs:
+                ytitle = ''.join(['(', data.attrs['units'], ')'])
+            else:
+                ytitle = field
+            if cbar_label is None:
+                cbar_title = ytitle
+            else:
+                cbar_title = ''.join(['(', cbar_label, ')'])
+            self.add_colorbar(col, title=cbar_title, subplot_index=subplot_index)
+
         self.axes[subplot_index] = ax
         return self.axes[subplot_index]
